@@ -3,7 +3,7 @@
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Migrate mailboxes from AWS WorkMail to Microsoft 365 — resilient, checkpointed, resumable",
   "type": "module",
   "bin": {
@@ -28,7 +28,16 @@
     "url": "https://github.com/RESCOR-LLC/aw2ms365.rescor.net/issues"
   },
   "author": "RESCOR LLC",
-  "keywords": ["aws", "workmail", "ms365", "exchange", "migration", "imap", "ews", "email"],
+  "keywords": [
+    "aws",
+    "workmail",
+    "ms365",
+    "exchange",
+    "migration",
+    "imap",
+    "ews",
+    "email"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=20.0.0"
