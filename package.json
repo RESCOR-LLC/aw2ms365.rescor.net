@@ -1,0 +1,23 @@
+{
+  "name": "@rescor/aw2ms365",
+  "version": "0.1.0",
+  "description": "Migrate mailboxes from AWS WorkMail to Microsoft 365 — resilient, checkpointed, resumable",
+  "type": "module",
+  "bin": {
+    "aw2ms365": "./bin/migrate.mjs"
+  },
+  "scripts": {
+    "start": "node bin/migrate.mjs",
+    "test": "vitest run"
+  },
+  "keywords": ["aws", "workmail", "ms365", "exchange", "migration", "imap", "ews", "email"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "imap": "^0.8.19",
+    "js-yaml": "^4.1.0",
+    "mailparser": "^3.7.2"
+  }
+}

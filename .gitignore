@@ -1,0 +1,7 @@
+node_modules/
+config.yaml
+*.yaml
+!templates/*.yaml
+checkpoints/
+.env
+*.log
