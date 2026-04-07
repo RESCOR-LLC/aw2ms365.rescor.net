@@ -42,7 +42,10 @@ If terms like "OAuth client credentials," "IMAP," and "EWS" are unfamiliar, you 
 ## Quick Start
 
 ```bash
-# Install
+# Install from npm
+npm install -g @rescor-llc/aw2ms365
+
+# Or install directly from GitHub
 npm install -g github:RESCOR-LLC/aw2ms365.rescor.net
 
 # Interactive setup — prompts for credentials, saves to ~/.aw2ms365/
