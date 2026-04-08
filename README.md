@@ -349,6 +349,16 @@ You can override the config path with an explicit argument: `aw2ms365 migrate /o
 - Consider deleting the app registration entirely once migration is done.
 - WorkMail credentials are sent over TLS (IMAP port 993).
 
+## Known Issues
+
+### `imap` package — semver ReDoS advisory
+
+The `imap` package (our IMAP client) depends on `semver` 2.x, which has a [Regular Expression Denial of Service advisory](https://github.com/advisories/GHSA-c2qf-rxjj-qqgw). This will appear as a "high severity" finding in `npm audit`.
+
+**This is not exploitable in aw2ms365.** The vulnerable `semver` code path is only triggered by parsing untrusted version strings. Our usage of `imap` never passes user input to semver — it's an internal dependency of the IMAP protocol parser.
+
+The `imap` library is unmaintained (last published 2019). There is no patched version available. We are tracking this in [issue #1](https://github.com/RESCOR-LLC/aw2ms365.rescor.net/issues/1) and will migrate to an alternative IMAP library if one becomes available.
+
 ## Migration Guide
 
 For a comprehensive walkthrough of the entire WorkMail-to-MS365 migration process — including the manual steps outside the scope of this tool — see [docs/migration-guide.md](docs/migration-guide.md).
