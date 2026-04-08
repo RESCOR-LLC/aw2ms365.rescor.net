@@ -1,0 +1,61 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly Monday 6am UTC
+
+jobs:
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+
+      - uses: github/codeql-action/analyze@v3
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: npm ci
+
+      - name: npm audit
+        run: npm audit --audit-level=critical || true
+
+      - name: Check for secrets in source
+        run: |
+          echo "Checking for potential secrets in source files..."
+          FOUND=0
+          for pattern in 'password\s*[:=]\s*["\x27][^"\x27]' 'secret\s*[:=]\s*["\x27][^"\x27]' 'AKIA[0-9A-Z]{16}' 'ghp_[a-zA-Z0-9]{36}'; do
+            if grep -rn --include="*.mjs" --include="*.js" --include="*.json" -E "$pattern" src/ bin/ 2>/dev/null | grep -v 'config\.' | grep -v 'process\.env' | grep -v 'clientSecret' | grep -v 'this\.' | grep -v 'placeholder' | grep -v 'your-'; then
+              echo "WARNING: Potential secret pattern found"
+              FOUND=1
+            fi
+          done
+          if [ $FOUND -eq 0 ]; then echo "No hardcoded secrets found."; fi
+
+      - name: Check for real email addresses
+        run: |
+          echo "Checking for real email addresses..."
+          if grep -rn --include="*.mjs" --include="*.md" -E '[a-zA-Z0-9._%+-]+@(maine\.net|atra\.us|rescor\.(net|llc)|robinsons\.farm|nmi\.net|egrc\.info)' src/ bin/ README.md docs/ 2>/dev/null; then
+            echo "ERROR: Real email addresses found in source!"
+            exit 1
+          else
+            echo "No real email addresses found."
+          fi

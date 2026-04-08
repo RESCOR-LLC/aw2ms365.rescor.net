@@ -44,7 +44,7 @@ export class MigrationEngine {
       for (const folder of folders) { await this._migrateFolder(folder); }
       this._printSummary();
     } catch (error) {
-      console.error(`\nFatal error: ${error.message}`);
+      console.error(`\nFatal error: ${this._sanitizeError(error.message)}`);
       process.exit(1);
     } finally {
       this._disconnect();
@@ -152,7 +152,7 @@ export class MigrationEngine {
       } else if (importResult.success) {
         state = this.checkpoint.updateAfterSuccess(state);
       } else {
-        state = this.checkpoint.updateAfterFailure(state, uids[index], importResult.error);
+        state = this.checkpoint.updateAfterFailure(state, uids[index], this._sanitizeError(importResult.error));
       }
 
       this._saveCheckpointIfDue(folderName, state, index + 1, uids.length);
@@ -237,6 +237,17 @@ export class MigrationEngine {
         throw new Error(`Reconnect failed: ${reconnectError.message}`);
       }
     }
+  }
+
+  _sanitizeError(message) {
+    if (!message) { return 'Unknown error'; }
+    // Redact potential credentials or tenant-specific info from error messages
+    let sanitized = message;
+    const tenantId = this.config?.destination?.tenantId;
+    const clientId = this.config?.destination?.clientId;
+    if (tenantId) { sanitized = sanitized.replaceAll(tenantId, '[tenant-id]'); }
+    if (clientId) { sanitized = sanitized.replaceAll(clientId, '[client-id]'); }
+    return sanitized;
   }
 
   _isPermanentError(errorMessage) {

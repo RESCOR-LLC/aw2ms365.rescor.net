@@ -22,7 +22,7 @@ export class WorkMailSource {
       host: this.host,
       port: this.port,
       tls: this.tls,
-      tlsOptions: { servername: this.host },
+      tlsOptions: { servername: this.host, rejectUnauthorized: true },
       connTimeout: 30000,
       authTimeout: 15000,
     });

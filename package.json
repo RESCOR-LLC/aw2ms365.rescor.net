@@ -46,5 +46,8 @@
     "imap": "^0.8.19",
     "js-yaml": "^4.1.0",
     "mailparser": "^3.7.2"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
   }
 }

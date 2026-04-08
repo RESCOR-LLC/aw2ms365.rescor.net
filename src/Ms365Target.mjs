@@ -12,9 +12,15 @@ export class Ms365Target {
     this.clientId = config.destination.clientId;
     this.clientSecret = config.destination.clientSecret;
     this.mailbox = config.destination.mailbox;
+    this.escapedMailbox = this._escapeXml(config.destination.mailbox);
     this.token = null;
     this.tokenExpiry = 0;
     this.folderIdCache = new Map();
+  }
+
+  _escapeXml(value) {
+    if (!value) { return ''; }
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   async authenticate() {
@@ -61,7 +67,7 @@ export class Ms365Target {
     <t:RequestServerVersion Version="Exchange2016"/>
     <t:ExchangeImpersonation>
       <t:ConnectingSID>
-        <t:SmtpAddress>${this.mailbox}</t:SmtpAddress>
+        <t:SmtpAddress>${this.escapedMailbox}</t:SmtpAddress>
       </t:ConnectingSID>
     </t:ExchangeImpersonation>
   </soap:Header>
@@ -232,12 +238,16 @@ export class Ms365Target {
   }
 
   _extractHeader(headerText, headerName) {
-    const regex = new RegExp(`^${headerName}:\\s*(.+)`, 'mi');
-    const match = headerText.match(regex);
-    if (!match) { return null; }
-    let value = match[1].trim();
-    value = this._decodeMimeHeader(value);
-    return value;
+    const lowerName = headerName.toLowerCase() + ':';
+    const lines = headerText.split(/\r?\n/);
+    for (const line of lines) {
+      if (line.toLowerCase().startsWith(lowerName)) {
+        let value = line.substring(headerName.length + 1).trim();
+        value = this._decodeMimeHeader(value);
+        return value;
+      }
+    }
+    return null;
   }
 
   _decodeMimeHeader(value) {
