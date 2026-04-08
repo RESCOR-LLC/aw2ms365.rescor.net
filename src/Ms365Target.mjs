@@ -206,10 +206,10 @@ export class Ms365Target {
   }
 
   async importMessage(folderId, mimeBuffer) {
-    const messageId = this._extractMessageId(mimeBuffer);
+    const fingerprint = this._extractFingerprint(mimeBuffer);
 
-    if (messageId) {
-      const isDuplicate = await this._messageExistsInFolder(folderId, messageId);
+    if (fingerprint) {
+      const isDuplicate = await this._messageExistsInFolder(folderId, fingerprint);
       if (isDuplicate) {
         return { success: true, skipped: true };
       }
@@ -218,27 +218,66 @@ export class Ms365Target {
     return this._createMessage(folderId, mimeBuffer);
   }
 
-  _extractMessageId(mimeBuffer) {
-    // Parse Message-ID from MIME headers (before first blank line)
+  _extractFingerprint(mimeBuffer) {
     const headerEnd = mimeBuffer.indexOf('\r\n\r\n');
-    const headerBytes = headerEnd > 0 ? mimeBuffer.subarray(0, Math.min(headerEnd, 8192)) : mimeBuffer.subarray(0, 8192);
+    const headerBytes = headerEnd > 0 ? mimeBuffer.subarray(0, Math.min(headerEnd, 16384)) : mimeBuffer.subarray(0, 16384);
     const headerText = headerBytes.toString('utf-8');
-    const match = headerText.match(/^Message-ID:\s*(<[^>]+>)/mi);
-    return match ? match[1] : null;
+
+    const subject = this._extractHeader(headerText, 'Subject');
+    const from = this._extractHeader(headerText, 'From');
+    const date = this._extractHeader(headerText, 'Date');
+
+    if (!subject && !from && !date) { return null; }
+    return { subject, from, date };
   }
 
-  async _messageExistsInFolder(folderId, messageId) {
-    const escapedId = messageId.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  _extractHeader(headerText, headerName) {
+    const regex = new RegExp(`^${headerName}:\\s*(.+)`, 'mi');
+    const match = headerText.match(regex);
+    return match ? match[1].trim() : null;
+  }
+
+  async _messageExistsInFolder(folderId, fingerprint) {
+    const restrictions = [];
+
+    if (fingerprint.subject) {
+      const escaped = fingerprint.subject.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+      restrictions.push(`
+        <t:IsEqualTo>
+          <t:FieldURI FieldURI="item:Subject"/>
+          <t:FieldURIOrConstant><t:Constant Value="${escaped}"/></t:FieldURIOrConstant>
+        </t:IsEqualTo>`);
+    }
+
+    if (fingerprint.date) {
+      const parsedDate = new Date(fingerprint.date);
+      if (!isNaN(parsedDate.getTime())) {
+        const isoDate = parsedDate.toISOString();
+        const beforeDate = new Date(parsedDate.getTime() + 60000).toISOString();
+        restrictions.push(`
+          <t:IsGreaterThanOrEqualTo>
+            <t:FieldURI FieldURI="item:DateTimeSent"/>
+            <t:FieldURIOrConstant><t:Constant Value="${isoDate}"/></t:FieldURIOrConstant>
+          </t:IsGreaterThanOrEqualTo>`);
+        restrictions.push(`
+          <t:IsLessThan>
+            <t:FieldURI FieldURI="item:DateTimeSent"/>
+            <t:FieldURIOrConstant><t:Constant Value="${beforeDate}"/></t:FieldURIOrConstant>
+          </t:IsLessThan>`);
+      }
+    }
+
+    if (restrictions.length === 0) { return false; }
+
+    const restriction = restrictions.length === 1
+      ? restrictions[0]
+      : `<t:And>${restrictions.join('')}</t:And>`;
+
     const xml = await this._ewsRequest(`
       <m:FindItem Traversal="Shallow">
         <m:ItemShape><t:BaseShape>IdOnly</t:BaseShape></m:ItemShape>
         <m:IndexedPageItemView MaxEntriesReturned="1" Offset="0" BasePoint="Beginning"/>
-        <m:Restriction>
-          <t:IsEqualTo>
-            <t:FieldURI FieldURI="message:InternetMessageId"/>
-            <t:FieldURIOrConstant><t:Constant Value="${escapedId}"/></t:FieldURIOrConstant>
-          </t:IsEqualTo>
-        </m:Restriction>
+        <m:Restriction>${restriction}</m:Restriction>
         <m:ParentFolderIds><t:FolderId Id="${folderId}"/></m:ParentFolderIds>
       </m:FindItem>`);
     return xml.includes('ItemId Id="');
