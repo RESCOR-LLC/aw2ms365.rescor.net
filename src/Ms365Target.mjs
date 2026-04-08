@@ -247,9 +247,14 @@ export class Ms365Target {
         return Buffer.from(text, 'base64').toString('utf-8');
       }
       // Q encoding: underscores are spaces, =XX is hex
+      // Strip non-ASCII results — they may be wrong charset. The substring
+      // search will still match on the ASCII portions.
       const decoded = text
         .replace(/_/g, ' ')
-        .replace(/=([0-9A-Fa-f]{2})/g, (m, hex) => String.fromCharCode(parseInt(hex, 16)));
+        .replace(/=([0-9A-Fa-f]{2})/g, (m, hex) => {
+          const code = parseInt(hex, 16);
+          return code < 128 ? String.fromCharCode(code) : ' ';
+        });
       return decoded;
     });
   }
@@ -257,21 +262,48 @@ export class Ms365Target {
   async _messageExistsInFolder(folderId, fingerprint) {
     if (!fingerprint.subject || fingerprint.subject.length < 5) { return false; }
 
-    // Use first 40 chars of subject as substring match — handles encoding
-    // differences between MIME source and Exchange's decoded storage
-    const searchSubject = fingerprint.subject.substring(0, 40);
-    const escaped = searchSubject.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    // Use the longest ASCII word from the subject — avoids encoding
+    // mismatches (smart quotes, em dashes, charset differences between
+    // MIME source and Exchange's decoded storage)
+    const words = fingerprint.subject.match(/[a-zA-Z0-9]{3,}/g);
+    if (!words || words.length === 0) { return false; }
+    const searchWord = words.sort((a, b) => b.length - a.length)[0];
+    const escaped = searchWord.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+    const subjectRestriction = `
+      <t:Contains ContainmentMode="Substring" ContainmentComparison="IgnoreCase">
+        <t:FieldURI FieldURI="item:Subject"/>
+        <t:Constant Value="${escaped}"/>
+      </t:Contains>`;
+
+    let restriction = subjectRestriction;
+
+    // Add date window if available — narrows false positives from common words
+    if (fingerprint.date) {
+      const parsedDate = new Date(fingerprint.date);
+      if (!isNaN(parsedDate.getTime())) {
+        const beforeDate = new Date(parsedDate.getTime() - 300000).toISOString();
+        const afterDate = new Date(parsedDate.getTime() + 300000).toISOString();
+        restriction = `
+          <t:And>
+            ${subjectRestriction}
+            <t:IsGreaterThanOrEqualTo>
+              <t:FieldURI FieldURI="item:DateTimeSent"/>
+              <t:FieldURIOrConstant><t:Constant Value="${beforeDate}"/></t:FieldURIOrConstant>
+            </t:IsGreaterThanOrEqualTo>
+            <t:IsLessThanOrEqualTo>
+              <t:FieldURI FieldURI="item:DateTimeSent"/>
+              <t:FieldURIOrConstant><t:Constant Value="${afterDate}"/></t:FieldURIOrConstant>
+            </t:IsLessThanOrEqualTo>
+          </t:And>`;
+      }
+    }
 
     const xml = await this._ewsRequest(`
       <m:FindItem Traversal="Shallow">
         <m:ItemShape><t:BaseShape>IdOnly</t:BaseShape></m:ItemShape>
         <m:IndexedPageItemView MaxEntriesReturned="1" Offset="0" BasePoint="Beginning"/>
-        <m:Restriction>
-          <t:Contains ContainmentMode="Substring" ContainmentComparison="IgnoreCase">
-            <t:FieldURI FieldURI="item:Subject"/>
-            <t:Constant Value="${escaped}"/>
-          </t:Contains>
-        </m:Restriction>
+        <m:Restriction>${restriction}</m:Restriction>
         <m:ParentFolderIds><t:FolderId Id="${folderId}"/></m:ParentFolderIds>
       </m:FindItem>`);
     return xml.includes('ItemId Id="');
