@@ -144,15 +144,53 @@ Most modern mail clients will pick up the new configuration automatically via au
 
 ## Lessons Learned
 
-These are things we discovered during our own migration that weren't obvious beforehand:
+These are things we discovered during our own migration that weren't obvious beforehand. Some of them cost hours. None of them were documented anywhere we could find.
 
-- **Inventory aliases and groups before you start, not after.** It's easy to focus on messages and forget that aliases and groups are separate entities that need explicit migration.
-- **Large mailboxes take a long time.** At IMAP speeds, a 200,000-message mailbox takes roughly 55 hours to migrate. Plan accordingly.
-- **WorkMail IMAP drops connections under sustained load.** Any migration tool that doesn't handle reconnection will fail on large mailboxes.
-- **MS365 anti-spam may quarantine migrated messages.** If you're importing old messages, some may trigger phishing or spam filters. You may need to create transport rules to trust your own domains during migration.
-- **EWS-imported messages may have empty envelope fields.** Messages imported via EWS `CreateItem` with raw MIME content are stored correctly, but Exchange doesn't always populate its searchable To/Subject fields from the MIME headers. The message content is intact — it displays correctly when opened — but server-side searching may not find them by recipient.
-- **Test with one user first.** Migrate a single mailbox, verify everything (messages, folders, aliases, mail flow), and then proceed with the rest.
-- **Don't decommission WorkMail until everything is verified.** WorkMail is your only backup until migration is confirmed complete. Keep it running until you're certain.
+### Planning
+
+- **Inventory aliases and groups before you start, not after.** It's natural to focus on messages and forget that aliases and groups are separate entities that need explicit migration. We didn't discover our missing distribution groups until a test email bounced — days after we thought we were done. Use `aws workmail list-groups` and `aws workmail list-aliases` for every user before you begin.
+
+- **Large mailboxes take a long time.** At IMAP speeds, a 200,000-message mailbox takes roughly 55 hours to migrate. A 150,000-message mailbox took multiple days with repeated restarts. Plan accordingly and set expectations with users.
+
+- **Back up before you start.** AWS WorkMail's `StartMailboxExportJob` API can export each mailbox to S3 as a zip of .eml files. It's asynchronous and can take hours for large mailboxes, but it gives you an independent backup outside both mail systems. Do this before you begin the migration, not after something goes wrong.
+
+### IMAP and Connectivity
+
+- **WorkMail IMAP drops connections under sustained load.** Microsoft's built-in IMAP migration hit 60 transient connection failures and gave up permanently — on a 150,000-message mailbox at 72% completion. Any migration tool that doesn't handle reconnection will fail on large mailboxes. We had to restart the Microsoft migration repeatedly, each time picking up where it left off and getting a few thousand more messages through before the next failure.
+
+- **WorkMail password resets take a moment to propagate.** If you reset a WorkMail password via the AWS CLI, the IMAP server may reject the new password for 30–60 seconds. Wait and retry before assuming the password is wrong.
+
+- **Bash interprets `!` in double-quoted strings.** This is a shell issue, not a mail issue, but it bit us: `aws workmail reset-password --password "MyP@ss!2026"` silently corrupts the password. Use single quotes for passwords containing `!`.
+
+### MS365 and Entra ID
+
+- **Microsoft's admin portals are a maze.** App registrations are in Entra ID. Mailbox management is in Exchange Admin. Migration batches are in PowerShell. Domain management is in MS365 Admin Center. DKIM is in Exchange Admin but sometimes requires PowerShell. None of these consoles link to each other reliably, and they sometimes show different views of the same data.
+
+- **Client secrets are shown once.** When you create a client secret in Entra ID, the value is only displayed at the moment of creation. If you navigate away without copying it, you have to create a new one. We lost a secret this way and had to regenerate it.
+
+- **Client secret vs. secret ID.** The secrets table in Entra ID shows two columns that look similar: "Secret ID" (a UUID that identifies the secret) and "Value" (the actual secret string). You need the Value, not the Secret ID. The error message when you use the wrong one says "Invalid client secret" — it doesn't tell you that you grabbed the ID instead of the value.
+
+- **YAML eats special characters.** MS365 client secrets frequently contain `~`, which YAML interprets as a null value prefix. Passwords may contain `!` or `#`. Always wrap credential values in single quotes in config files. This is not hypothetical — it caused silent authentication failures that were difficult to diagnose because the config file looked correct at a glance.
+
+- **Exchange Online PowerShell is broken on macOS 15.** The MSAL browser-based authentication fails with a `PlatformNotSupportedException`. Use `Connect-ExchangeOnline -Device` to authenticate via device code instead. This was not documented by Microsoft at the time of writing.
+
+### Message Fidelity
+
+- **MS365 anti-spam may quarantine migrated messages.** Importing old messages can trigger phishing or spam filters, especially for messages from external senders with outdated SPF records. You may need to create transport rules to trust your own domains during migration.
+
+- **EWS-imported messages may have empty envelope fields.** Messages imported via EWS `CreateItem` with raw MIME content are stored correctly, but Exchange does not always populate its searchable properties (To, CC, sometimes Subject) from the MIME headers. The message content is intact — it displays correctly when opened — but server-side searching by recipient may not find them. This is a known Exchange limitation.
+
+- **Message-IDs change across mail systems.** We initially tried to deduplicate messages by comparing Message-ID headers between the source and destination. This doesn't work: WorkMail assigns its own Message-ID to messages, and Exchange assigns yet another when importing via EWS. The original sender's Message-ID may not survive the round trip. We switched to matching on subject line and sent date, which is stable across systems.
+
+- **MIME-encoded subjects don't match decoded subjects.** Email subjects can be encoded in various character sets (UTF-8, windows-1252, ISO-8859-1) using RFC 2047 encoded-word syntax. The source IMAP delivers the raw encoded form; Exchange stores the decoded Unicode form. A subject like `You=92re in` (windows-1252 right single quote) becomes `You're in` in Exchange. Any comparison logic needs to account for this.
+
+### Running the Migration
+
+- **Test with one small mailbox first.** We migrated a 17-message test mailbox before attempting the 200,000-message production ones. That test uncovered configuration issues, authentication problems, and the deduplication gap — all fixable in minutes rather than hours.
+
+- **Checkpoints are local to each machine.** If you start a migration on one machine and continue on another, the second machine has no checkpoint file and will re-import everything. The dedup feature prevents duplicates, but it's slower than checkpoint-based skipping. Run the migration from one machine.
+
+- **Don't decommission WorkMail until everything is verified.** WorkMail is your only backup until the migration is confirmed complete. Keep it running until you've verified message counts, tested mail flow on every alias, confirmed every distribution group, and monitored for at least a week. The temptation to clean up quickly is strong. Resist it.
 
 ## Timeline
 

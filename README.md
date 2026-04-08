@@ -176,20 +176,112 @@ If the process crashes or is interrupted, running `aw2ms365 migrate` again picks
 
 ## Troubleshooting
 
-### "OAuth error: AADSTS7000215"
-The app registration doesn't have admin consent. An MS365 admin needs to grant consent for the `full_access_as_app` permission.
+### Configuration Problems
 
-### "401 Unauthorized" on EWS
-The client secret may have expired. Generate a new one in Entra ID → App registrations → Certificates & secrets.
+#### "Temporary authentication failure" on IMAP connect
+Your WorkMail password is wrong or hasn't propagated yet. If you just reset the password via `aws workmail reset-password`, wait 30–60 seconds and try again. You can verify IMAP credentials independently:
+```bash
+curl -v imaps://imap.mail.us-east-1.awsapps.com --user 'you@yourdomain.com:yourpassword'
+```
+If using `aws workmail reset-password`, be aware that bash interprets `!` in double-quoted strings as history expansion. Use single quotes around passwords containing special characters:
+```bash
+aws workmail reset-password --organization-id m-YOUR_ORG_ID --user-id USER_SID --password 'MyP@ss!2026' --region us-east-1
+```
 
-### High failure rate
-Increase the rate limit interval or reduce concurrent load. EWS throttles at approximately 2,000 requests per minute per mailbox.
+#### "OAuth error: AADSTS7000215 — Invalid client secret"
+This error has three common causes, and the wording doesn't distinguish between them:
+1. **Wrong client secret value.** In Entra ID → App registrations → Certificates & secrets, the table has two columns: **Secret ID** (a UUID) and **Value** (the actual secret). You need the **Value**. It is only visible at the moment you create it — if you navigated away, you must create a new secret.
+2. **Wrong client ID.** If you have multiple app registrations, confirm the client ID in your config matches the app where you created the secret. Entra ID's interface makes it easy to create a secret on one app while copying the client ID from another.
+3. **Secret not yet propagated.** Newly created secrets can take 1–2 minutes to become active. Wait and retry.
 
-### "ECONNRESET" or "Not connected"
-WorkMail IMAP dropped the connection. The tool automatically reconnects and retries.
+#### "OAuth error: AADSTS700016 — Application not found"
+The tenant ID in your config doesn't match the tenant where the app was registered. Double-check both values in Entra ID → App registrations → Overview.
 
-### Messages appear but have empty To/Subject fields
-This is a known EWS limitation: `CreateItem` with `MimeContent` stores the raw MIME but doesn't always populate Exchange's searchable envelope properties. The message content is intact — Outlook will display it correctly when opened.
+#### YAML special characters in passwords or secrets
+MS365 client secrets frequently contain `~`, and passwords may contain `!`, `#`, or other characters that YAML interprets. Always wrap credential values in single quotes in your config file:
+```yaml
+password: 'MyP@ss!2026'
+clientSecret: 'wc68Q~~longSecretValue'
+```
+If you used `aw2ms365 init` interactively and the migration fails on authentication, open `~/.aw2ms365/config.yaml` and verify the password and secret values are correct. The interactive prompt masks input, which can make typos hard to catch.
+
+### MS365 App Registration
+
+#### Finding your app registration
+Microsoft's admin portals are spread across multiple sites. The app registration you need is at:
+
+**Entra ID** → entra.microsoft.com → Applications → App registrations
+
+Direct URL: `https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade`
+
+This is NOT in the MS365 Admin Center, NOT in the Exchange Admin Center, and NOT in the Azure Portal's main page — though some of these link to each other inconsistently.
+
+#### "full_access_as_app" permission not found
+When adding API permissions, select **APIs my organization uses** (not "Microsoft APIs"), then search for **Office 365 Exchange Online**. The permission is under **Application permissions**, not Delegated permissions. After adding it, an admin must click **Grant admin consent**.
+
+### Runtime Problems
+
+#### Migration hangs on a folder
+If the migration appears stuck on a folder with no progress output, wait at least 2 minutes — the first message in a folder may take longer due to IMAP folder selection overhead. If it's still stuck after 2 minutes, Ctrl+C and run `aw2ms365 migrate` again. The checkpoint will resume from the last saved position.
+
+#### "ECONNRESET" or "Not connected"
+WorkMail IMAP dropped the connection. The tool automatically reconnects and retries up to 3 times per message. If the failure rate is high, WorkMail may be throttling sustained IMAP connections. Reduce the rate limit in your config:
+```yaml
+rateLimit: 0.5    # one message every 2 seconds
+```
+
+#### High failure rate
+EWS throttles at approximately 2,000 requests per minute per mailbox. The default rate limit of 1 msg/s is well within this, but each message requires at least 2 EWS calls (dedup check + import). For very large migrations, reduce `rateLimit` to `0.5`.
+
+#### "401 Unauthorized" on EWS calls during migration
+The client secret may have expired (MS365 secrets have a configurable expiry, defaulting to 6 months). Generate a new one in Entra ID → App registrations → Certificates & secrets, update your config, and resume.
+
+### Deduplication
+
+The tool detects duplicate messages by matching the subject line and sent date between the source message and the destination folder. This prevents re-importing messages that already exist, which can happen if:
+- You run the migration from a different machine (each machine has its own checkpoint files)
+- You cleared checkpoints and re-ran the migration
+- A previous partial migration was interrupted
+
+The dedup check adds one EWS call per message. For a clean first migration with no prior data in the destination, this overhead is unnecessary — but it's a small price for the safety of preventing thousands of duplicate messages.
+
+If you see messages reported as "dup" that you expected to be imported, it means a message with a similar subject already exists in the destination folder. This is by design — the tool errs on the side of not creating duplicates.
+
+### Messages in the destination
+
+#### Messages appear but have empty To/Subject in search results
+This is a known EWS limitation: `CreateItem` with `MimeContent` stores the raw MIME faithfully, but Exchange does not always populate its searchable envelope properties (To, CC) from the MIME headers. The message content is intact — Outlook displays it correctly when you open it — but server-side searches by recipient may not find them. This is a Microsoft limitation, not a bug in this tool.
+
+#### Old messages appearing in Inbox as new
+If your destination mailbox already receives live mail, migrated messages may appear in the Inbox interleaved with recent mail. All migrated messages are marked as read to reduce notification noise, but they will still appear in the Inbox message list. After migration, you may want to archive old messages using Outlook's built-in archive feature.
+
+### Exchange Online PowerShell (for post-migration tasks)
+
+#### "PlatformNotSupportedException: macOS 15.x" when connecting
+The Exchange Online Management module's browser-based authentication is broken on recent macOS versions. Use device code authentication instead:
+```powershell
+Connect-ExchangeOnline -UserPrincipalName admin@yourdomain.com -Device
+```
+This gives you a code to enter at `https://microsoft.com/devicelogin` in any browser.
+
+### npm Installation
+
+#### "E404" when installing from npm
+If you see errors about packages like `imap` not being found on `npm.pkg.github.com`, you likely have an `.npmrc` file (in `~/.npmrc` or in the project directory) that routes scoped packages to GitHub Packages instead of the public npm registry. Either remove the problematic `.npmrc` entry or install directly from GitHub:
+```bash
+npm install -g github:RESCOR-LLC/aw2ms365.rescor.net
+```
+
+#### Installed package has wrong version
+npm caches aggressively. If you've updated but the installed version is stale:
+```bash
+npm cache clean --force
+npm install -g @rescor-llc/aw2ms365
+```
+Verify the installed version:
+```bash
+npm list -g @rescor-llc/aw2ms365
+```
 
 ## What This Tool Does NOT Migrate
 
