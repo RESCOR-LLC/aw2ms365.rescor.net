@@ -118,7 +118,8 @@ export class MigrationEngine {
     const startIndex = state.lastCompletedIndex + 1;
 
     if (startIndex >= uids.length) {
-      console.log(`  Already complete (${state.imported} imported, ${state.failed} failed)`);
+      const skipInfo = state.skipped > 0 ? `, ${state.skipped} dup skipped` : '';
+      console.log(`  Already complete (${state.imported} imported, ${state.failed} failed${skipInfo})`);
       return;
     }
 
@@ -212,7 +213,7 @@ export class MigrationEngine {
     const result = await this.target.importMessage(destinationFolderId, mimeBuffer);
 
     if (result.success) {
-      return { success: true };
+      return { success: true, skipped: result.skipped || false };
     }
 
     if (this._isPermanentError(result.error)) {

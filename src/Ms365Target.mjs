@@ -234,50 +234,44 @@ export class Ms365Target {
   _extractHeader(headerText, headerName) {
     const regex = new RegExp(`^${headerName}:\\s*(.+)`, 'mi');
     const match = headerText.match(regex);
-    return match ? match[1].trim() : null;
+    if (!match) { return null; }
+    let value = match[1].trim();
+    value = this._decodeMimeHeader(value);
+    return value;
+  }
+
+  _decodeMimeHeader(value) {
+    // Decode RFC 2047 MIME encoded-words: =?charset?encoding?text?=
+    return value.replace(/=\?([^?]+)\?([BbQq])\?([^?]+)\?=/g, (match, charset, encoding, text) => {
+      if (encoding.toUpperCase() === 'B') {
+        return Buffer.from(text, 'base64').toString('utf-8');
+      }
+      // Q encoding: underscores are spaces, =XX is hex
+      const decoded = text
+        .replace(/_/g, ' ')
+        .replace(/=([0-9A-Fa-f]{2})/g, (m, hex) => String.fromCharCode(parseInt(hex, 16)));
+      return decoded;
+    });
   }
 
   async _messageExistsInFolder(folderId, fingerprint) {
-    const restrictions = [];
+    if (!fingerprint.subject || fingerprint.subject.length < 5) { return false; }
 
-    if (fingerprint.subject) {
-      const escaped = fingerprint.subject.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-      restrictions.push(`
-        <t:IsEqualTo>
-          <t:FieldURI FieldURI="item:Subject"/>
-          <t:FieldURIOrConstant><t:Constant Value="${escaped}"/></t:FieldURIOrConstant>
-        </t:IsEqualTo>`);
-    }
-
-    if (fingerprint.date) {
-      const parsedDate = new Date(fingerprint.date);
-      if (!isNaN(parsedDate.getTime())) {
-        const isoDate = parsedDate.toISOString();
-        const beforeDate = new Date(parsedDate.getTime() + 60000).toISOString();
-        restrictions.push(`
-          <t:IsGreaterThanOrEqualTo>
-            <t:FieldURI FieldURI="item:DateTimeSent"/>
-            <t:FieldURIOrConstant><t:Constant Value="${isoDate}"/></t:FieldURIOrConstant>
-          </t:IsGreaterThanOrEqualTo>`);
-        restrictions.push(`
-          <t:IsLessThan>
-            <t:FieldURI FieldURI="item:DateTimeSent"/>
-            <t:FieldURIOrConstant><t:Constant Value="${beforeDate}"/></t:FieldURIOrConstant>
-          </t:IsLessThan>`);
-      }
-    }
-
-    if (restrictions.length === 0) { return false; }
-
-    const restriction = restrictions.length === 1
-      ? restrictions[0]
-      : `<t:And>${restrictions.join('')}</t:And>`;
+    // Use first 40 chars of subject as substring match — handles encoding
+    // differences between MIME source and Exchange's decoded storage
+    const searchSubject = fingerprint.subject.substring(0, 40);
+    const escaped = searchSubject.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
     const xml = await this._ewsRequest(`
       <m:FindItem Traversal="Shallow">
         <m:ItemShape><t:BaseShape>IdOnly</t:BaseShape></m:ItemShape>
         <m:IndexedPageItemView MaxEntriesReturned="1" Offset="0" BasePoint="Beginning"/>
-        <m:Restriction>${restriction}</m:Restriction>
+        <m:Restriction>
+          <t:Contains ContainmentMode="Substring" ContainmentComparison="IgnoreCase">
+            <t:FieldURI FieldURI="item:Subject"/>
+            <t:Constant Value="${escaped}"/>
+          </t:Contains>
+        </m:Restriction>
         <m:ParentFolderIds><t:FolderId Id="${folderId}"/></m:ParentFolderIds>
       </m:FindItem>`);
     return xml.includes('ItemId Id="');
