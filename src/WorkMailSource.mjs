@@ -79,7 +79,7 @@ export class WorkMailSource {
     }
 
     const uids = await new Promise((resolve, reject) => {
-      connection.uid.search(['ALL'], (error, result) => {
+      connection.search(['ALL'], (error, result) => {
         if (error) { reject(error); } else { resolve(result); }
       });
     });
@@ -91,7 +91,7 @@ export class WorkMailSource {
     const connection = this.connection;
 
     const mimeBuffer = await new Promise((resolve, reject) => {
-      const fetch = connection.uid.fetch([uid], { bodies: '', struct: false });
+      const fetch = connection.fetch([uid], { bodies: '', struct: false });
       let buffer = Buffer.alloc(0);
 
       fetch.on('message', (message) => {
