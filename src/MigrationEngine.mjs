@@ -146,9 +146,13 @@ export class MigrationEngine {
     for (let index = startIndex; index < uids.length; index++) {
       const importResult = await this._importMessageWithRetry(uids[index], destinationFolderId, folderName);
 
-      state = importResult.success
-        ? this.checkpoint.updateAfterSuccess(state)
-        : this.checkpoint.updateAfterFailure(state, uids[index], importResult.error);
+      if (importResult.skipped) {
+        state = this.checkpoint.updateAfterSkip(state);
+      } else if (importResult.success) {
+        state = this.checkpoint.updateAfterSuccess(state);
+      } else {
+        state = this.checkpoint.updateAfterFailure(state, uids[index], importResult.error);
+      }
 
       this._saveCheckpointIfDue(folderName, state, index + 1, uids.length);
       this._reportProgressIfDue(index + 1, uids.length, startIndex, folderStartTime, state);
@@ -173,8 +177,9 @@ export class MigrationEngine {
     const remaining = totalMessages - messageNumber;
     const estimatedMinutes = Math.ceil(remaining / (processed / elapsed) / 60);
 
+    const skipInfo = state.skipped > 0 ? `, ${state.skipped} dup` : '';
     console.log(
-      `  ${messageNumber}/${totalMessages} — ${state.imported} ok, ${state.failed} fail (${rate}/s, ~${estimatedMinutes}m remaining)`,
+      `  ${messageNumber}/${totalMessages} — ${state.imported} ok, ${state.failed} fail${skipInfo} (${rate}/s, ~${estimatedMinutes}m remaining)`,
     );
   }
 

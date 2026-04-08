@@ -206,6 +206,45 @@ export class Ms365Target {
   }
 
   async importMessage(folderId, mimeBuffer) {
+    const messageId = this._extractMessageId(mimeBuffer);
+
+    if (messageId) {
+      const isDuplicate = await this._messageExistsInFolder(folderId, messageId);
+      if (isDuplicate) {
+        return { success: true, skipped: true };
+      }
+    }
+
+    return this._createMessage(folderId, mimeBuffer);
+  }
+
+  _extractMessageId(mimeBuffer) {
+    // Parse Message-ID from MIME headers (before first blank line)
+    const headerEnd = mimeBuffer.indexOf('\r\n\r\n');
+    const headerBytes = headerEnd > 0 ? mimeBuffer.subarray(0, Math.min(headerEnd, 8192)) : mimeBuffer.subarray(0, 8192);
+    const headerText = headerBytes.toString('utf-8');
+    const match = headerText.match(/^Message-ID:\s*(<[^>]+>)/mi);
+    return match ? match[1] : null;
+  }
+
+  async _messageExistsInFolder(folderId, messageId) {
+    const escapedId = messageId.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const xml = await this._ewsRequest(`
+      <m:FindItem Traversal="Shallow">
+        <m:ItemShape><t:BaseShape>IdOnly</t:BaseShape></m:ItemShape>
+        <m:IndexedPageItemView MaxEntriesReturned="1" Offset="0" BasePoint="Beginning"/>
+        <m:Restriction>
+          <t:IsEqualTo>
+            <t:FieldURI FieldURI="message:InternetMessageId"/>
+            <t:FieldURIOrConstant><t:Constant Value="${escapedId}"/></t:FieldURIOrConstant>
+          </t:IsEqualTo>
+        </m:Restriction>
+        <m:ParentFolderIds><t:FolderId Id="${folderId}"/></m:ParentFolderIds>
+      </m:FindItem>`);
+    return xml.includes('ItemId Id="');
+  }
+
+  async _createMessage(folderId, mimeBuffer) {
     const mimeBase64 = mimeBuffer.toString('base64');
 
     const xml = await this._ewsRequest(`
