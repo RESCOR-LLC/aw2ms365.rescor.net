@@ -184,6 +184,14 @@ These are things we discovered during our own migration that weren't obvious bef
 
 - **MIME-encoded subjects don't match decoded subjects.** Email subjects can be encoded in various character sets (UTF-8, windows-1252, ISO-8859-1) using RFC 2047 encoded-word syntax. The source IMAP delivers the raw encoded form; Exchange stores the decoded Unicode form. A subject like `You=92re in` (windows-1252 right single quote) becomes `You're in` in Exchange. Any comparison logic needs to account for this.
 
+### Microsoft IMAP migration workarounds
+
+If you use Microsoft's built-in IMAP migration instead of aw2ms365, be aware of two limits:
+
+- **Transient failure limit (61):** The migration batch quits permanently after 61 connection errors. WorkMail's IMAP server frequently drops connections under load. The only fix is to restart the migration with `Start-MigrationUser`, which resumes from the last synced message.
+
+- **2GB transfer limit per batch:** Some environments enforce a per-batch transfer cap. If your migration stalls at exactly 2GB transferred, delete and recreate the batch — Exchange tracks what was already synced, so the new batch picks up where the old one left off. This can be automated with a PowerShell loop that monitors `BytesTransferred` and cycles the batch when it hits the limit.
+
 ### Running the Migration
 
 - **Test with one small mailbox first.** We migrated a 17-message test mailbox before attempting the 200,000-message production ones. That test uncovered configuration issues, authentication problems, and the deduplication gap — all fixable in minutes rather than hours.
