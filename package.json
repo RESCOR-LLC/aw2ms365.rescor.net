@@ -3,7 +3,7 @@
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Migrate mailboxes from AWS WorkMail to Microsoft 365 — resilient, checkpointed, resumable",
   "type": "module",
   "bin": {
