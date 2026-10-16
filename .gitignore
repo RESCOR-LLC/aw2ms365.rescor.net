@@ -5,3 +5,6 @@ config.yaml
 checkpoints/
 .env
 *.log
+
+# local junk (2026-10-16 sweep)
+.DS_Store
