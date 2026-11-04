@@ -191,7 +191,7 @@ async function runInit(targetPath) {
   }
 
   if (process.argv.includes('--non-interactive')) {
-    writeFileSync(targetPath, SAMPLE_CONFIG);
+    writeFileSync(targetPath, SAMPLE_CONFIG, { mode: 0o600 });
     console.log(`Created ${targetPath} — edit it with your credentials and run: aw2ms365 migrate`);
     process.exit(0);
   }
@@ -209,7 +209,8 @@ async function runInit(targetPath) {
   readline.close();
 
   const configObject = { source, destination, options };
-  writeFileSync(targetPath, yaml.dump(configObject, { lineWidth: 120 }));
+  // Config holds the WorkMail password and MS365 client secret: owner-only.
+  writeFileSync(targetPath, yaml.dump(configObject, { lineWidth: 120 }), { mode: 0o600 });
   console.log(`\n  Config written to ${targetPath}`);
   console.log(`  Run: aw2ms365 migrate\n`);
 }
