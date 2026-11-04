@@ -179,14 +179,21 @@ If the process crashes or is interrupted, running `aw2ms365 migrate` again picks
 ### Configuration Problems
 
 #### "Temporary authentication failure" on IMAP connect
-Your WorkMail password is wrong or hasn't propagated yet. If you just reset the password via `aws workmail reset-password`, wait 30–60 seconds and try again. You can verify IMAP credentials independently:
+Your WorkMail password is wrong or hasn't propagated yet. If you just reset the password via `aws workmail reset-password`, wait 30–60 seconds and try again. You can verify IMAP credentials independently. Give only the username and let curl prompt for the password, so it never lands in your shell history or the process list:
 ```bash
-curl -v imaps://imap.mail.us-east-1.awsapps.com --user 'you@yourdomain.com:yourpassword'
+curl -v imaps://imap.mail.us-east-1.awsapps.com --user 'you@yourdomain.com'
 ```
-If using `aws workmail reset-password`, be aware that bash interprets `!` in double-quoted strings as history expansion. Use single quotes around passwords containing special characters:
+If using `aws workmail reset-password`, don't put the password on the command line: anything in argv is visible to other processes and is often logged. Pass it from an owner-only file instead:
 ```bash
-aws workmail reset-password --organization-id m-YOUR_ORG_ID --user-id USER_SID --password 'MyP@ss!2026' --region us-east-1
+umask 077
+read -rs WORKMAIL_PASSWORD   # type the password; it is not echoed
+printf '{"Password": "%s"}\n' "$WORKMAIL_PASSWORD" > reset.json   # printf is a shell builtin, so no argv exposure
+unset WORKMAIL_PASSWORD
+aws workmail reset-password --organization-id m-YOUR_ORG_ID --user-id USER_SID \
+  --cli-input-json file://reset.json --region us-east-1
+rm reset.json
 ```
+If the password contains `"` or `\`, escape them in `reset.json` as JSON requires.
 
 #### "OAuth error: AADSTS7000215 — Invalid client secret"
 This error has three common causes, and the wording doesn't distinguish between them:
