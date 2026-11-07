@@ -2,6 +2,7 @@ node_modules/
 config.yaml
 *.yaml
 !templates/*.yaml
+!.rescor/patterns.yaml
 checkpoints/
 .env
 *.log
