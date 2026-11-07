@@ -1,0 +1,7 @@
+# patterns.rescor.net conformance declaration
+project: aw2ms365.rescor.net
+patterns:
+  - id: security.no-committed-secrets          # required: a hit fails
+    adopted: yes
+  - id: security.no-secret-exposure-in-scripts # recommended: a hit warns
+    adopted: yes
