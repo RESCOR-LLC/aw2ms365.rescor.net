@@ -1,0 +1,4 @@
+# Reviewed false positives only (rule / file / commit; values never recorded here).
+# 2026-11-07: README.md troubleshooting example used the placeholder credential
+# you@yourdomain.com:yourpassword in a curl --user line; removed from the README in #6.
+2ed3af0a378b0907ac602bb5f58bd8743d899464:README.md:curl-auth-user:184
