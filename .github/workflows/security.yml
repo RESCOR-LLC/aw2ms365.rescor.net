@@ -8,8 +8,13 @@ on:
   schedule:
     - cron: '0 6 * * 1'  # Weekly Monday 6am UTC
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# One job (CodeQL + audit + source checks): GitHub bills each job rounded up to a whole minute.
 jobs:
-  codeql:
+  security:
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -23,11 +28,6 @@ jobs:
           languages: javascript
 
       - uses: github/codeql-action/analyze@v3
-
-  audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
