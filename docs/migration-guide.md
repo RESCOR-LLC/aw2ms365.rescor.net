@@ -79,7 +79,7 @@ The `aw2ms365` tool reads messages directly from WorkMail via IMAP and writes th
 - **Verification built in.** After migration, you can compare message counts between source and destination.
 
 ```
-npm install -g @rescor/aw2ms365
+npm install -g github:RESCOR-LLC/aw2ms365.rescor.net
 aw2ms365 init       # interactive setup — saves config to ~/.aw2ms365/
 aw2ms365 migrate     # run or resume migration
 aw2ms365 verify      # compare source and destination counts
