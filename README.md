@@ -42,10 +42,7 @@ If terms like "OAuth client credentials," "IMAP," and "EWS" are unfamiliar, you 
 ## Quick Start
 
 ```bash
-# Install from npm
-npm install -g @rescor-llc/aw2ms365
-
-# Or install directly from GitHub
+# Install directly from GitHub (recommended; always the latest main)
 npm install -g github:RESCOR-LLC/aw2ms365.rescor.net
 
 # Interactive setup — prompts for credentials, saves to ~/.aw2ms365/
@@ -56,6 +53,14 @@ aw2ms365 migrate
 ```
 
 All data is stored in `~/.aw2ms365/` — config, checkpoints, and logs never end up in a git repo.
+
+### Where releases are published
+
+| Source | Versions | Notes |
+|---|---|---|
+| GitHub (`github:RESCOR-LLC/aw2ms365.rescor.net`) | latest `main` | No registry or token needed. Recommended. |
+| GitHub Packages (`@rescor-llc/aw2ms365` on `npm.pkg.github.com`) | tagged releases | GitHub Packages requires a GitHub token to install, even for public packages. See [npm Installation](#npm-installation). |
+| npmjs.org (`@rescor-llc/aw2ms365`) | up to 0.2.0 only | No longer published there. Those versions predate the config-file permission fix in the [CHANGELOG](CHANGELOG.md). |
 
 ## Features
 
@@ -105,7 +110,7 @@ The destination mailbox must already exist in MS365. Create it via the MS365 Adm
 
 ### `aw2ms365 init`
 
-Interactive setup — prompts for WorkMail and MS365 credentials, saves config to `~/.aw2ms365/config.yaml`. Use `--non-interactive` to generate a template for manual editing.
+Interactive setup — prompts for WorkMail and MS365 credentials, saves config to `~/.aw2ms365/config.yaml` with owner-only permissions (`0600`). Use `--non-interactive` to generate a template for manual editing (also written `0600`).
 
 ### `aw2ms365 migrate [config.yaml]`
 
@@ -273,17 +278,30 @@ This gives you a code to enter at `https://microsoft.com/devicelogin` in any bro
 
 ### npm Installation
 
-#### "E404" when installing from npm
-If you see errors about packages like `imap` not being found on `npm.pkg.github.com`, you likely have an `.npmrc` file (in `~/.npmrc` or in the project directory) that routes scoped packages to GitHub Packages instead of the public npm registry. Either remove the problematic `.npmrc` entry or install directly from GitHub:
+The simplest install needs no registry configuration:
 ```bash
 npm install -g github:RESCOR-LLC/aw2ms365.rescor.net
 ```
+
+#### Installing a tagged release from GitHub Packages
+GitHub Packages requires authentication even for public packages. Create a GitHub personal access token (classic) with the `read:packages` scope, then route only the `@rescor-llc` scope to GitHub Packages in `~/.npmrc`. Keep the token out of your shell history by reading it without echo:
+```bash
+read -rs GITHUB_PACKAGES_TOKEN   # paste the token; it is not echoed
+umask 077
+printf '@rescor-llc:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=%s\n' "$GITHUB_PACKAGES_TOKEN" >> ~/.npmrc
+unset GITHUB_PACKAGES_TOKEN
+npm install -g @rescor-llc/aw2ms365
+```
+Use the scoped `@rescor-llc:registry=` line, not a global `registry=` line: dependencies such as `imap` live on the public npm registry.
+
+#### "E404" for `imap` or other dependencies
+If packages like `imap` are reported missing on `npm.pkg.github.com`, an `.npmrc` (in `~/.npmrc` or the current directory) routes *all* packages to GitHub Packages. Change it to the scoped form above, or install directly from GitHub.
 
 #### Installed package has wrong version
 npm caches aggressively. If you've updated but the installed version is stale:
 ```bash
 npm cache clean --force
-npm install -g @rescor-llc/aw2ms365
+npm install -g github:RESCOR-LLC/aw2ms365.rescor.net
 ```
 Verify the installed version:
 ```bash
@@ -351,7 +369,7 @@ You can override the config path with an explicit argument: `aw2ms365 migrate /o
 
 - **Do not delete messages or mailboxes on AWS WorkMail until you have verified the migration to your satisfaction.** Use `aw2ms365 verify` to compare message counts, and spot-check important folders manually. WorkMail is your only source of truth until you are confident the migration is complete.
 - **Do not decommission your WorkMail organization until aliases, groups, and DNS have been fully migrated.** Message content is only part of a working mail system.
-- **Credentials are stored in `~/.aw2ms365/config.yaml`** — never in your project directory.
+- **Credentials are stored in `~/.aw2ms365/config.yaml`** — never in your project directory. `aw2ms365 init` writes it owner-only (`0600`). Config files created by 0.2.0 or earlier were written with your default umask (often world-readable); tighten an existing one with `chmod 600 ~/.aw2ms365/config.yaml`.
 - The MS365 app secret should be rotated after migration is complete.
 - Consider deleting the app registration entirely once migration is done.
 - WorkMail credentials are sent over TLS (IMAP port 993).
@@ -369,6 +387,17 @@ The `imap` library is unmaintained (last published 2019). There is no patched ve
 ## Migration Guide
 
 For a comprehensive walkthrough of the entire WorkMail-to-MS365 migration process — including the manual steps outside the scope of this tool — see [docs/migration-guide.md](docs/migration-guide.md).
+
+## Development
+
+```bash
+git clone https://github.com/RESCOR-LLC/aw2ms365.rescor.net.git
+cd aw2ms365.rescor.net
+npm ci
+npm test        # vitest unit tests
+```
+
+CI runs the tests on Node 20 and 22, CodeQL and `npm audit`, and Gitleaks/Kingfisher secret scans on pull requests and on `main`. Pushing a `v*` tag publishes the package to GitHub Packages. Notable changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
