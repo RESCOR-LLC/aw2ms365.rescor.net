@@ -4,6 +4,8 @@ Notable changes to `@rescor-llc/aw2ms365`. Versions follow [Semantic Versioning]
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-13
+
 ### Security
 - `aw2ms365 init` now writes `~/.aw2ms365/config.yaml` with owner-only permissions (`0600`), in both interactive and `--non-interactive` modes. The file holds the WorkMail password and the MS365 client secret. Config files created by 0.2.0 or earlier keep their old permissions; run `chmod 600 ~/.aw2ms365/config.yaml` to tighten one.
 - README troubleshooting examples no longer put passwords on the command line.
@@ -32,5 +34,6 @@ Initial releases.
 - IMAP UID-based fetch from WorkMail, EWS `MimeContent` import to MS365, with folder preservation, checkpoints, retry with backoff, and rate limiting.
 - Duplicate detection, refined across 0.1.7–0.1.10: Message-ID matching was replaced by subject and sent-date matching, with MIME header decoding and a date window.
 
-[Unreleased]: https://github.com/RESCOR-LLC/aw2ms365.rescor.net/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/RESCOR-LLC/aw2ms365.rescor.net/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/RESCOR-LLC/aw2ms365.rescor.net/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/RESCOR-LLC/aw2ms365.rescor.net/compare/v0.1.10...v0.2.0
